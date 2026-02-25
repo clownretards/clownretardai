@@ -1,5 +1,6 @@
 const https = require('https');
 const { getUserHistory, recordInteraction, alreadyReplied } = require('./memory');
+const { recall, remember, formatMemoryContext, hasBrain } = require('./brain');
 
 const OPENROUTER_KEY = process.env.OPENROUTER_KEY || '';
 const MODEL = 'anthropic/claude-sonnet-4-20250514';
@@ -39,7 +40,7 @@ const SHILL_ADDENDUM = `\n\nIMPORTANT: This is a SHILL reply under a KOL/influen
 - If their post is about crypto, tie it to $RETARDS. If it's about something else, find a creative angle.
 - Keep it short (1-2 sentences max). Don't force the shill if it doesn't fit — sometimes just be funny and drop "🤡" or "cryptomaxxing.io"`;
 
-function buildPrompt(username, theirText, history, mode) {
+async function buildPrompt(username, theirText, history, mode, deepMemory) {
   let context = '';
 
   if (history.user && history.user.interaction_count > 1) {
@@ -53,6 +54,12 @@ function buildPrompt(username, theirText, history, mode) {
     }
   } else {
     context += '\nThis is a new user — first time interacting with you.';
+  }
+
+  // CLUDE deep memory — recalled associations
+  if (deepMemory && deepMemory.length > 0) {
+    context += '\n\nDEEP MEMORY (things you remember about this topic/user):';
+    context += '\n' + formatMemoryContext(deepMemory);
   }
 
   const systemContent = mode === 'shill' ? SYSTEM_PROMPT + SHILL_ADDENDUM : SYSTEM_PROMPT;
@@ -107,7 +114,16 @@ async function generateReply(userId, username, tweetId, theirText, mode = 'engag
   }
 
   const history = getUserHistory(userId);
-  const messages = buildPrompt(username, theirText, history, mode);
+
+  // CLUDE deep memory recall
+  let deepMemory = [];
+  if (hasBrain()) {
+    try {
+      deepMemory = await recall(`@${username}: ${theirText}`, { user: username, limit: 3 });
+    } catch (e) {}
+  }
+
+  const messages = await buildPrompt(username, theirText, history, mode, deepMemory);
 
   try {
     let reply = await callOpenRouter(messages);
@@ -120,8 +136,25 @@ async function generateReply(userId, username, tweetId, theirText, mode = 'engag
     // Remove quotes if the model wrapped its reply in them
     reply = reply.replace(/^["']|["']$/g, '');
 
-    // Record the interaction
-    recordInteraction(userId, username, tweetId, theirText, reply, 'mention_reply');
+    // Record in sqlite
+    recordInteraction(userId, username, tweetId, theirText, reply, mode);
+
+    // Store in CLUDE deep memory
+    if (hasBrain()) {
+      try {
+        await remember(
+          `@${username} said: "${theirText}" — I replied: "${reply}"`,
+          {
+            type: 'episodic',
+            user: username,
+            sourceId: tweetId,
+            tags: ['conversation', mode],
+            source: 'x-agent',
+            emotion: mode === 'shill' ? 0.6 : 0.5,
+          }
+        );
+      } catch (e) {}
+    }
 
     return reply;
   } catch (e) {

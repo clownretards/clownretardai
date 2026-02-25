@@ -5,6 +5,7 @@ const path = require('path');
 const { CLAVICULAR_QUOTES, QuoteRotator } = require('./quotes');
 const { generateReply } = require('./conversation');
 const { alreadyReplied, recordInteraction } = require('./memory');
+const { initBrain, remember, startDreamSchedule, hasBrain } = require('./brain');
 
 // ─── CONFIG ───
 const TARGET_USER = process.env.TARGET_USER || 'clavicular0';
@@ -112,6 +113,12 @@ async function replyToClav(tweetId) {
     console.log(`[CLAV] ✅ replied: "${quote.substring(0, 60)}..."`);
     state.repliedTo.push(tweetId);
     state.raidLog.push({ type: 'clav', user: TARGET_USER, time: Date.now() });
+    if (hasBrain()) {
+      remember(`Trolled @${TARGET_USER} with: "${quote}"`, {
+        type: 'episodic', user: TARGET_USER, sourceId: tweetId,
+        tags: ['troll', 'clavicular'], source: 'x-agent', emotion: 0.8,
+      }).catch(() => {});
+    }
     saveState();
     return true;
   } catch (e) {
@@ -401,6 +408,13 @@ async function start() {
   console.log('');
 
   loadState();
+
+  // Init CLUDE brain
+  await initBrain();
+  if (hasBrain()) {
+    startDreamSchedule();
+    console.log('[BRAIN] CLUDE memory active — agent remembers everything 🧠');
+  }
 
   // Verify credentials
   try {
