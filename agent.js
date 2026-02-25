@@ -9,12 +9,14 @@ const { initBrain, remember, startDreamSchedule, hasBrain } = require('./brain')
 
 // ─── CONFIG ───
 const TARGET_USER = process.env.TARGET_USER || 'clavicular0';
-const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL) || 120000; // 2 min
+const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL) || 60000; // 1 min — clavicular is priority
 const MENTION_POLL_INTERVAL = parseInt(process.env.MENTION_POLL_INTERVAL) || 90000; // 1.5 min
-const FEED_POLL_INTERVAL = parseInt(process.env.FEED_POLL_INTERVAL) || 180000; // 3 min
+const FEED_POLL_INTERVAL = parseInt(process.env.FEED_POLL_INTERVAL) || 150000; // 2.5 min — stay under 5 min window
 const MAX_FEED_REPLIES_PER_CYCLE = 3; // don't spam — max 3 replies per feed check
-const MIN_REPLY_DELAY = parseInt(process.env.MIN_REPLY_DELAY) || 10000;
-const MAX_REPLY_DELAY = parseInt(process.env.MAX_REPLY_DELAY) || 45000;
+const MIN_REPLY_DELAY = parseInt(process.env.MIN_REPLY_DELAY) || 5000;
+const MAX_REPLY_DELAY = parseInt(process.env.MAX_REPLY_DELAY) || 20000;
+const CLAV_REPLY_DELAY_MIN = 3000; // clavicular gets fastest replies
+const CLAV_REPLY_DELAY_MAX = 10000;
 const CA = process.env.CA || 'kkAjN1Gnuq3AkfCTotuLaadLUFWs7VujivmF7Xwpump';
 const STATE_FILE = path.join(__dirname, 'state.json');
 
@@ -103,8 +105,9 @@ async function fetchNewTweets() {
 async function replyToClav(tweetId) {
   if (state.repliedTo.includes(tweetId) || alreadyReplied(tweetId)) return false;
 
-  const delay = randomDelay();
-  console.log(`[CLAV] replying to ${tweetId} in ${(delay/1000).toFixed(0)}s...`);
+  // Clavicular gets the fastest reply — priority target
+  const delay = CLAV_REPLY_DELAY_MIN + Math.floor(Math.random() * (CLAV_REPLY_DELAY_MAX - CLAV_REPLY_DELAY_MIN));
+  console.log(`[CLAV] ⚡ PRIORITY replying to ${tweetId} in ${(delay/1000).toFixed(0)}s...`);
   await sleep(delay);
 
   const quote = quoter.next();
@@ -438,7 +441,7 @@ async function start() {
   // Staggered loops
   setInterval(pollClavicular, POLL_INTERVAL);
   setInterval(pollMentions, MENTION_POLL_INTERVAL);
-  setTimeout(() => setInterval(pollFeed, FEED_POLL_INTERVAL), 60000); // offset by 1 min
+  setTimeout(() => setInterval(pollFeed, FEED_POLL_INTERVAL), 30000); // 30s offset from other polls
   setInterval(postCommunityRecap, COMMUNITY_POST_INTERVAL); // hourly recap
 
   console.log(`[LIVE] agent is running. trolling @${TARGET_USER} + shilling feed + engaging community. 🤡`);
