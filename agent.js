@@ -101,7 +101,7 @@ async function fetchNewTweets() {
 }
 
 async function replyToClav(tweetId) {
-  if (state.repliedTo.includes(tweetId)) return false;
+  if (state.repliedTo.includes(tweetId) || alreadyReplied(tweetId)) return false;
 
   const delay = randomDelay();
   console.log(`[CLAV] replying to ${tweetId} in ${(delay/1000).toFixed(0)}s...`);
@@ -113,6 +113,8 @@ async function replyToClav(tweetId) {
     console.log(`[CLAV] ✅ replied: "${quote.substring(0, 60)}..."`);
     state.repliedTo.push(tweetId);
     state.raidLog.push({ type: 'clav', user: TARGET_USER, time: Date.now() });
+    // Record in sqlite for persistent dedup across restarts
+    recordInteraction('clav', TARGET_USER, tweetId, '[clavicular tweet]', quote, 'troll');
     if (hasBrain()) {
       remember(`Trolled @${TARGET_USER} with: "${quote}"`, {
         type: 'episodic', user: TARGET_USER, sourceId: tweetId,
@@ -271,7 +273,7 @@ async function pollFeed() {
     // Max replies per cycle
     if (repliedCount >= MAX_FEED_REPLIES_PER_CYCLE) break;
 
-    // Skip if already replied
+    // Double dedup: check both sqlite AND state
     if (alreadyReplied(tweet.id) || state.repliedTo.includes(tweet.id)) continue;
 
     console.log(`[FEED] @${tweet.username}: "${tweet.text.substring(0, 80)}"`);
@@ -289,6 +291,7 @@ async function pollFeed() {
         console.log(`[FEED] ✅ @${tweet.username}: "${reply.substring(0, 60)}..."`);
         state.repliedTo.push(tweet.id);
         state.raidLog.push({ type: 'shill', user: tweet.username, time: Date.now() });
+        recordInteraction(tweet.author_id, tweet.username, tweet.id, tweet.text, reply, 'shill');
         saveState();
         repliedCount++;
       } catch (e) {
